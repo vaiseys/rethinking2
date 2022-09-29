@@ -658,7 +658,8 @@ p</code></pre>
 values. What about adding sigma to these?</p>
 <p>The <code>predicted_draws()</code> function will get
 <code>draws</code> number of predictions for every actual data point
-based on draws of the linear predictor plus sigma.</p>
+based on draws of the linear predictor plus sigma. The default is 5000
+but we’ll use 1000 to speed things up a bit.</p>
 <pre class="r"><code>ppsims &lt;- predicted_draws(m1,
                           newdata = d,
                           draws = 1000)

@@ -279,7 +279,7 @@ p
 
 This looks pretty good but it only tells us about the expected values. What about adding sigma to these?
 
-The `predicted_draws()` function will get `draws` number of predictions for every actual data point based on draws of the linear predictor plus sigma.
+The `predicted_draws()` function will get `draws` number of predictions for every actual data point based on draws of the linear predictor plus sigma. The default is 5000 but we'll use 1000 to speed things up a bit.
 
 ```{r}
 ppsims <- predicted_draws(m1,
