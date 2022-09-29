@@ -1,0 +1,314 @@
+---
+title: "SR 4"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = TRUE)
+```
+
+```{r, eval=FALSE}
+install.packages("tidybayes")
+devtools::install_github("mjskay/tidybayes.rethinking")
+```
+
+```{r,message=FALSE}
+library(tidyverse)
+library(rethinking)
+library(tidybayes)
+library(tidybayes.rethinking)
+library(ggthemes)
+theme_set(theme_pander())
+```
+
+## 4.3 Gaussian model of height
+
+Get the data and limit it to adults.
+
+```{r}
+data(Howell1)
+d <- Howell1 |> 
+  filter(age >= 18)
+```
+
+I'm OK with you using `precis()` to summarize the raw data. It's pretty nice, actually.
+
+```{r}
+precis(d)
+```
+
+Let's look at a "quick" version of `ggplot()` to get a sense of the data.
+
+```{r}
+qplot(weight, data = d)
+qplot(height, data = d)
+qplot(height, weight, data = d)
+```
+
+Before dealing with the real data, let's redo some of the basic things he does. Let's look at 10 possible lines of the relationship between X and Y if we don't know anything.
+
+```{r}
+# how many fake lines?
+nsims <- 12
+
+# simulate some lines (and sigmas)
+set.seed(0929)
+sims1 <- tibble(
+  id = 1:nsims,
+  a = rnorm(nsims, mean = 0, sd = 1),
+  b = rnorm(nsims, mean = 0, sd = 1),
+  sigma = runif(nsims, min = 0, max = 1)
+)
+
+# here are the fake lines (and sigmas)
+head(sims1, nsims)
+```
+
+We can plot these lines.
+
+```{r}
+ggplot(sims1) +
+  geom_abline(
+    aes(color = factor(id),
+        slope = b,
+        intercept = a),
+    size = 2,
+    alpha = .7) +
+  xlim(-4,4) +
+  ylim(-4,4) +
+  labs(x = "X",
+       y = "Y") +
+  theme(legend.position = "none") +
+  theme(aspect.ratio = 1)
+```
+
+These are lines that are plausible given our priors. Note, however, that we didn't use sigma. That's because `a` and `b` define the line of expectation and `sigma` defines the spread around that expectation.
+
+We could make some fake data that corresponds to each of these.
+
+```{r}
+# how many fake observations per made up line?
+obs_per_sim <- 100
+
+# create the fake data
+sims1_data <- sims1 |>
+  uncount(100) |> 
+  mutate(x = runif(n = nsims * obs_per_sim,
+                   min = -4, 
+                   max =  4),
+         y = rnorm(n = nsims * obs_per_sim,
+                   mean = a + b*x,
+                   sd = sigma ))
+
+# faceted plot
+ggplot(sims1_data,
+       aes(x = x,
+           y = y,
+           color = factor(id))) +
+  geom_point() +
+  facet_wrap(~ id) +
+  theme(legend.position = "none")
+```
+
+Let's go back to height and weight.
+
+Here's the model:
+
+$$
+\begin{aligned}
+weight_i &\sim \text{Normal}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta \: height_i \\ 
+\alpha &\sim \text{Normal}(?,?) \\ 
+\beta &\sim \text{Normal}(?,?) \\ 
+\sigma &\sim \text{Uniform}(0,?) 
+\end{aligned}
+$$
+
+McElreath talks about some variable transformations in the lecture. Here are some possibilities. 
+
+- We could leave height as it is. In this case, it would mean that $\alpha$ must be equal to zero since something with zero height must also have zero weight!
+
+- We could "mean center" height by replacing $height_i$ with $(height_i - \overline{height})$. This would mean $\alpha$ now refers to the **mean weight** in the group.
+
+- An option he doesn't discuss is that we could mean center both variables. This would force $\alpha$ to be zero because someone of average height must also be expected to be of average weight. (Prove this to yourself if you don't believe it!) This has the advantage of making us only have to come up with a prior for the slope ($\beta$) and the scale parameter ($\sigma$)
+
+Let's center both variables and use a lognormal prior for the slope since we know it has to be positive. We will also use a ridiculously wide prior for sigma. Instead of writing out the centering expressions, I will put a \* on the variable to indicate that its mean has been subtracted away.
+
+$$
+\begin{aligned}
+weight^*_i &\sim \text{Normal}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta \: height^*_i \\ 
+\alpha &= 0 \\ 
+\beta &\sim \text{Lognormal}(0,1) \\
+\sigma &\sim \text{Uniform}(0,30) 
+\end{aligned}
+$$
+
+We can do prior predictive simulations of this as above.
+
+```{r}
+# how many fake lines?
+nsims <- 12
+
+# simulate some lines (and sigmas)
+set.seed(0929)
+sims2 <- tibble(
+  id = 1:nsims,
+  a = rep(0, nsims),
+  b = rlnorm(nsims, meanlog = 0, sdlog = 1),
+  sigma = runif(nsims, min = 0, max = 30)
+)
+
+# here are the fake lines (and sigmas)
+head(sims1, nsims)
+```
+
+We can plot these lines.
+
+```{r}
+ggplot(sims2) +
+  geom_abline(
+    aes(color = factor(id),
+        slope = b,
+        intercept = a),
+    size = 1.5,
+    alpha = .7) +
+  xlim(-20,20) +
+  ylim(-20,20) +
+  labs(x = "height",
+       y = "weight") +
+  theme(legend.position = "none") +
+  theme(aspect.ratio = 1)
+```
+
+Again, these are lines that are plausible given our priors. Again, however, that we didn't use sigma. That's because `a` and `b` define the line of expectation and `sigma` defines the spread around that expectation. Let's make some fake data again.
+
+```{r}
+# how many fake observations per made up line?
+obs_per_sim <- 100
+
+# create the fake data
+sims2_data <- sims2 |>
+  uncount(100) |> 
+  mutate(x = runif(n = nsims * obs_per_sim,
+                   min = -20, 
+                   max =  20),
+         y = rnorm(n = nsims * obs_per_sim,
+                   mean = a + b*x,
+                   sd = sigma ))
+
+# faceted plot
+ggplot(sims2_data,
+       aes(x = x,
+           y = y,
+           color = factor(id))) +
+  geom_point() +
+  facet_wrap(~ id) +
+  theme(legend.position = "none")
+```
+
+OK this isn't insane. So let's move on to estimating the models using `quap()`. For this week, you *must* use `quap()`. Later on I might let you use other things but not this week!
+
+The first thing is to make the centered versions of the variables.
+
+```{r}
+d <- d |> 
+  mutate(cweight = weight - mean(d$weight),
+         cheight = height - mean(d$height))
+```
+
+Then we set up the formula. Note that we can't tell it that `a` is exactly zero. (I've tried, anyway.) So we can just omit it from the expression. This is allowed if we've centered both variables.
+
+```{r}
+flist <- alist(
+  cweight ~ dnorm(mu, sigma),
+  mu <- b*cheight,
+  b ~ dlnorm(0, 1),
+  sigma ~ dunif(0, 30)
+)
+```
+
+How we can estimate the model.
+
+```{r}
+m1 <- quap(flist,
+           data = d)
+```
+
+Let's look at a summary of the results.
+
+```{r}
+precis(m1)
+```
+
+This is fine and all, but we are supposed to work with the whole posterior distribution. So let's get some samples using the `tidy_draws()` function. This comes from the **tidybayes.rethinking** addition to the **tidybayes** package. The code to install these is above if you haven't done it.
+
+```{r}
+draws <- tidy_draws(m1, n = 100)
+head(draws)
+```
+
+This is the density plot of `b`.
+
+```{r}
+qplot(b, 
+      data = draws, 
+      geom = "density")
+```
+
+Let's plot the line along with the original data. I'm going to keep this graph so we can add to it later.
+
+```{r}
+p <- ggplot(draws) +
+  geom_abline(aes(intercept = 0,
+                  slope = b),
+              alpha = .2) +
+  geom_point(
+    data = d,
+    mapping = aes(x = cheight,
+                  y = cweight),
+    alpha = .2) +
+  labs(x = "height - mean(height) in cm",
+       y = "weight - mean(weight) in kg",
+       title = "Posterior estimates and original data")
+
+p
+```
+
+This looks pretty good but it only tells us about the expected values. What about adding sigma to these?
+
+The `predicted_draws()` function will get `draws` number of predictions for every actual data point based on draws of the linear predictor plus sigma.
+
+```{r}
+ppsims <- predicted_draws(m1,
+                          newdata = d,
+                          draws = 1000)
+head(ppsims, 20)
+```
+
+I can use `HPDI()` from **rethinking** to get the upper and lower bounds of the 89% interval for each case.
+
+```{r}
+ppsims <- ppsims |> 
+  group_by(.row) |> 
+  mutate(lo_bound = HPDI(.prediction)[1],
+         up_bound = HPDI(.prediction)[2])
+```
+
+Now we add these to the plot we already have.
+
+```{r}
+p + geom_ribbon(data = ppsims,
+                mapping = aes(
+                  x = cheight, 
+                  ymax = up_bound,
+                  ymin = lo_bound),
+                alpha = .1) +
+  labs(caption = "with 89% HPDI overlaid")
+```
+
+
+
+

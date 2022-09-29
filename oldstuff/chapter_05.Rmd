@@ -1,0 +1,251 @@
+---
+title: "Chapter 5"
+output: html_notebook
+---
+
+```{r setup, results=FALSE}
+library(rethinking)
+library(tidyverse)
+library(broom)
+theme_set(theme_minimal())
+options(scipen = 999)   # gets annoying
+
+```
+
+# Chapter
+
+# Exercises
+
+5H2.
+
+```{r}
+data("WaffleDivorce")
+
+myscale <- function(x) as.numeric(scale(x))
+
+d <- WaffleDivorce %>% 
+  mutate(D = myscale(Divorce),
+         M = myscale(Marriage),
+         A = myscale(MedianAgeMarriage))
+
+h2 <- quap(
+  alist(D ~ dnorm(mu_D, sigma_D),
+        A ~ dnorm(mu_A, sigma_A),
+        mu_D <- alpha_D + bAD*A,
+        mu_A <- alpha_A + bMA*M,
+        alpha_D ~ dnorm(0, .1),
+        alpha_A ~ dnorm(0, .1),
+        bAD ~ dnorm(0, .5),
+        bMA ~ dnorm(0, .5),
+        sigma_D ~ dexp(1),
+        sigma_A ~ dexp(1)), 
+  data = d)
+
+sim_data <- d %>% # scale to original mean/SD
+  mutate(M = (Marriage*.5 - mean(d$Marriage)) / sd(d$Marriage)) %>% 
+  select(M,A)
+
+# predictions for real and fake
+orig <- sim(h2, vars=c("A","D"))
+cf <- sim(h2, data = sim_data, vars=c("A","D"))
+
+# diff between them
+mean(cf$D) - mean(orig$D)
+
+# plot diffs
+hist(cf$D - orig$D)
+
+```
+
+Doing it manually
+
+```{r}
+precis(h2)
+
+# new marriage rate * effect of M on A * effect of A on D
+mean(sim_data$M) * precis(h2)[3,1] * precis(h2)[4,1]
+
+```
+
+H3.
+
+```{r}
+data(milk)
+d <- milk
+
+myscale <- function(x) as.numeric(scale(x))
+
+d <- d %>%
+  drop_na(neocortex.perc) %>% 
+  mutate(K = myscale(kcal.per.g),
+         N = myscale(neocortex.perc),
+         M = myscale(log(mass)))
+
+h3 <- quap(
+  alist(K ~ dnorm(mu_K, sigma_K),
+        N ~ dnorm(mu_N, sigma_N),
+        mu_K <- alpha_K + bMK*M + bNK*N,
+        mu_N <- alpha_N + bMN*M,
+        alpha_K ~ dnorm(0, .2),
+        alpha_N ~ dnorm(0, .2),
+        bMK ~ dnorm(0, .5),
+        bNK ~ dnorm(0, .5),
+        bMN ~ dnorm(0, .5),
+        sigma_K ~ dexp(1),
+        sigma_N ~ dexp(1)),
+  data = d)
+
+sim_data <- d %>% 
+  mutate(M = (2*log(mass) - mean(log(mass))) / sd(log(mass)))
+
+# predictions for real and fake
+orig <- sim(h3, vars=c("N","K"))
+cf <- sim(h3, data = sim_data, vars=c("N","K"))
+
+# diff between them
+mean(cf$K) - mean(orig$K)
+
+# manually
+mean(sim_data$M) * precis(h3)[4,1] * precis(h3)[5,1] +
+  mean(sim_data$M) * precis(h3)[3,1]
+
+```
+
+
+# Class
+
+Sampling from the posterior in frequentist regression with `lm()`.
+
+```{r}
+data(Howell1)
+
+# scaling function
+myscale <- function(x) as.numeric(scale(x))
+
+# new variables to data
+d <- Howell1 %>% 
+  mutate(zheight = myscale(height),
+         zage = myscale(age))
+
+# regression
+mod <- lm(zheight ~ zage, data = d)
+precis(mod)
+
+# sampling
+samples <- 
+  MASS::mvrnorm(100, 
+                mu = coef(mod), 
+                Sigma = vcov(mod)) %>% 
+  as.data.frame()
+
+# plot
+ggplot(d, aes(x = zage, y = zheight)) +
+  geom_point(alpha = .1) +
+  geom_abline(slope = samples$zage,
+              intercept = samples$`(Intercept)`,
+              alpha = .2)
+```
+
+Prior predictive simulation
+
+```{r}
+# data prep
+data(WaffleDivorce)
+
+myscale <- function(x) as.numeric(scale(x))
+
+d <- WaffleDivorce %>% 
+  mutate(D = myscale(Divorce),
+         M = myscale(Marriage),
+         A = myscale(MedianAgeMarriage))
+
+# model (change priors to see changes in simulation)
+m5.1 <- quap(  
+  alist(  
+    D ~ dnorm( mu, sigma),  
+    mu <- a + bA * A,  
+    a ~ dnorm( 0, 0.00001),  
+    bA ~ dnorm( 0, .3),  
+    sigma ~ dexp( 1)  ), 
+  data = d) 
+
+# prior simulation
+prior_samples <- extract.prior(m5.1, 100) %>%
+  as_tibble()
+
+ggplot(expand_grid(A = c(-3,3),
+              D = c(-10,10)), 
+       aes(x = A, y = D)) +
+  geom_point(color = "#FFFFFF") +
+  geom_abline(intercept = prior_samples$a,
+              slope = prior_samples$bA,
+              alpha = .3) +
+  geom_hline(yintercept = c(-2,2), color = "red")
+
+# posterior
+precis(m5.1)
+
+# flat prior comparison
+f5.1 <- lm(D ~ A, data = d)
+tidy(f5.1)
+
+```
+
+Let's do a preview of `rstanarm`. (Actually we should probably wait until MCMC.)
+
+```{r, message=FALSE}
+library(rstanarm)
+library(broom.mixed)
+
+r5.1 <- stan_glm(D ~ A, 
+                 data = d, 
+                 algorithm = "optimizing",
+                 prior = normal(0,.3),
+                 prior_intercept = normal(0,.1),
+                 prior_aux = exponential(1))
+prior_summary(r5.1)
+tidy(r5.1)
+
+
+```
+
+```{r}
+plot(r5.1)
+
+```
+
+Index variable with `rstanarm`. Remove the intercept and use `factor()`.
+
+```{r}
+r5.2 <- stan_glm(D ~ -1 + A + factor(South), 
+                 data = d, 
+                 algorithm = "optimizing",
+                 prior = normal(location = c(  0,  0,  0),
+                                scale =    c( .3,  2.5,  2.5)),
+                 prior_aux = exponential(1))
+prior_summary(r5.2)
+tidy(r5.2)
+
+```
+
+Can I get easier plotting functions to work here?
+
+```{r}
+library(ggeffects)
+ggpredict(r5.1, terms = "A", ci.lvl = .89) %>% plot()
+ggpredict(r5.2, ci.lvl = .89) %>% plot()
+
+```
+
+"Controlling" means adjusting
+
+```{r}
+real_mod <- lm(D ~ M + A, data = d)
+step1 <- lm(M ~ A, data = d)
+d$Mresid <- d$M - predict(step1)
+step2 <- lm(D ~ Mresid, data = d)
+precis(real_mod)
+precis(step2)
+
+
+```

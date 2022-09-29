@@ -1,0 +1,48 @@
+---
+title: "Chapter 4"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(tidybayes)
+library(rstan)
+library(patchwork)
+library(rethinking)
+options(mc.cores = 4)
+
+```
+
+# 4.3 Gaussian model of height
+
+```{r}
+data(Howell1, package = "rethinking")
+
+stan_data <- Howell1 %>% 
+  filter(age > 18 ) %>% 
+  compose_data()
+
+stan_program <- "
+  data {
+    int<lower=1> n;
+    vector[n] height;
+  }
+  
+  parameters {
+  real mu;
+  real<lower=0,upper=50> sigma;
+  }
+  
+  model {
+  height ~ normal(mu, sigma);
+  sigma ~ uniform(0,50);
+  mu ~ normal(178,20);
+  }
+ "
+
+m4.3 <- stan(model_code = stan_program, data = stan_data)
+m4.3
+
+
+```
+

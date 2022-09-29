@@ -1,0 +1,195 @@
+---
+title: "Chapter 7"
+output: html_notebook
+---
+
+# Class
+
+## Flat prior demo
+
+Data set up
+
+```{r}
+library(tidyverse)
+
+data("starwars")
+d <- starwars %>% 
+  select(name, height, mass, gender) %>% 
+  drop_na() %>% 
+  mutate(log_mass = log(mass),
+         log_height = log(height))
+
+
+```
+
+Plot
+
+```{r}
+ggplot(d, aes(x = log_height, y = log_mass)) +
+  geom_point(alpha = .3, aes(color = gender)) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+```
+
+Estimate flat prior models
+
+```{r}
+ols1 <- lm(log_mass ~ log_height, data = d)
+ols2 <- lm(log_mass ~ log_height + gender, data = d)
+ols3 <- lm(log_mass ~ log_height * gender, data = d)
+
+```
+
+Look at coefficients
+
+```{r}
+texreg::screenreg(list(ols1,ols2,ols3), digits = 3, stars = numeric(0))
+```
+
+Respecify with mean centering
+
+```{r}
+d <- d %>% 
+  mutate(cl_mass = log_mass - mean(log_mass),
+         cl_height = log_height - mean(log_height))
+
+ols1 <- lm(cl_mass ~ cl_height, data = d)
+ols2 <- lm(cl_mass ~ cl_height + gender, data = d)
+ols3 <- lm(cl_mass ~ cl_height * gender, data = d)
+
+```
+
+Look again at coefficients
+
+```{r}
+texreg::screenreg(list(ols1,ols2,ols3), 
+                  digits = 3, 
+                  stars = numeric(0))
+```
+
+Compare fits
+
+```{r}
+library(performance)
+compare_performance(ols1, ols2, ols3, metrics = c("RMSE", "AIC", "BIC"))
+
+```
+
+Final predictive plot
+
+```{r}
+library(ggeffects)
+p <- ggpredict(ols2, terms = c("cl_height","gender")) %>% plot()
+
+p + theme_minimal() + 
+  theme(legend.position = "top") +
+  labs(title = "", x = "Log Height", y = "Log Mass")
+
+```
+
+## Bayesian demo
+
+```{r}
+library(rstanarm)
+#options(mc.cores = parallel::detectCores()) # messes up performance package
+
+b1 <- stan_glm(cl_mass ~ cl_height, data = d)
+b2 <- stan_glm(cl_mass ~ cl_height + gender, data = d)
+b3 <- stan_glm(cl_mass ~ cl_height * gender, data = d)
+
+```
+
+Compare fits
+
+```{r}
+library(performance)
+compare_performance(b1, b2, b3, metrics = c("LOOIC"))
+
+```
+
+Final predictive plot
+
+```{r}
+p <- ggpredict(b3, terms = c("cl_height","gender")) %>% plot()
+
+p + theme_minimal() + 
+  theme(legend.position = "top") +
+  labs(title = "", x = "Log Height", y = "Log Mass")
+```
+
+```{r}
+summary(b3, digits =3)
+```
+
+# Exercises
+
+```{r}
+library(tidyverse)
+library(rstanarm)
+library(performance)
+```
+
+### H5
+
+```{r}
+data(foxes, package = "rethinking")
+
+m1 <- stan_glm(weight ~ avgfood + groupsize + area, 
+               data = foxes, 
+               prior_intercept = normal(0,1, autoscale = TRUE),
+               prior = normal(0,.5, autoscale = TRUE))
+
+m2 <- update(m1, weight ~ avgfood + groupsize)
+m3 <- update(m1, weight ~ groupsize + area)
+m4 <- update(m1, weight ~ avgfood)
+m5 <- update(m1, weight ~ area)
+
+compare_performance(m1,m2,m3,m4,m5,
+                    metrics = "LOOIC")
+
+```
+
+Comparing using SEM
+
+![](C:/Users/sbv4/AppData/Local/RStudio/tmp/paste-8CA7EB8A.png)
+
+```{r}
+
+library(lavaan)
+library(blavaan)
+
+myscale <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+
+d <- foxes %>% 
+  mutate(across(2:weight, myscale))
+
+form1 <- "
+  weight ~ avgfood + groupsize
+  groupsize ~ avgfood
+  avgfood ~ area
+"
+
+form2 <- "
+  weight ~ avgfood + groupsize + area
+  groupsize ~ avgfood
+  avgfood ~ area
+"
+
+m1 <- sem(form1, data = d)
+m2 <- sem(form2, data = d)
+
+AIC(m1)
+AIC(m2)
+
+BIC(m1)
+BIC(m2)
+
+
+b1 <- bsem(form1, data = d)
+b2 <- bsem(form2, data = d)
+
+
+```

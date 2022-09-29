@@ -1,0 +1,121 @@
+---
+title: "Chapter 3 sketch"
+output: html_document
+date: "2022-09-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 3M6
+
+This is an annoying problem so I wanted to solve it!
+
+Load libraries and set seed for replicability.
+
+```{r}
+library(tidyverse)
+library(rethinking)
+set.seed(0923)
+```
+
+Practice getting HPDIs to make sure I know how to do it.
+
+```{r}
+d <- 
+  tibble(p_grid = seq(0, 1, length.out = 1000),
+         prior = rep(1, 1000)) |> 
+  mutate(likelihood = dbinom(x = 8, 
+                             size = 15, 
+                             prob = p_grid),
+         posterior = likelihood * prior / sum(likelihood * prior))
+
+samples <- d |> 
+  slice_sample(n = 1e4,
+               weight_by = posterior,
+               replace = TRUE)
+
+my_ci <- HPDI(samples$p_grid,
+              prob = .9)
+
+width <- as.numeric(my_ci[2] - my_ci[1])
+```
+
+Yes that's working right.
+
+Now I will make a function (`my_width()`) of the foregoing that returns the HPDI interval width. It does all the steps for computing a width and then differences the upper and lower bounds. It takes as arguments the number of successes ("waters") and the number of trials ("tosses").
+
+Note that here I have replaced 8 and 15 with `successes` and `trials`, meaning I can replace them with any number.
+
+```{r}
+my_width <- function(successes, trials) {
+  
+  d <- 
+    tibble(p_grid = seq(0, 1, length.out = 1000),
+           prior = rep(1, 1000)) |>
+    mutate(
+      likelihood = dbinom(x = successes, 
+                          size = trials, 
+                          prob = p_grid),
+      posterior = likelihood * prior / sum(likelihood * prior)
+    )
+  
+  samples <- d |>
+    slice_sample(n = 1e4,
+                 weight_by = posterior,
+                 replace = TRUE)
+  
+  my_ci <- HPDI(samples$p_grid,
+                prob = .99)
+  
+  width <- as.numeric(my_ci[2] - my_ci[1])
+  
+  return(width)
+  
+}
+```
+
+Let's go ahead and try this out. Let's do a couple of examples.
+
+```{r}
+my_width(8, 15)
+my_width(50, 100)
+```
+
+It appears to be working. Now I have this, I will set up my testing grid. I'm going to start with 10 tosses and keep going up to 10,000 in increments of 10 tosses. Because getting half successes provides the most uncertainty (.5 probability is maximum uncertainty about proportion of water), I'm going to use that. In other words, I'm going to set up a situation where the number of successes is always half the number of trials. This is the worst-case so I want to know the sample size that will _guarantee_ me an interval width no wider than .05.
+
+```{r}
+my_tests <- tibble(
+  trials = seq(10, 1e4, 10),
+  successes = trials*.5
+)
+
+my_tests <- my_tests |> 
+  rowwise() |>   # I have to use this because my function isn't vectorized
+  mutate(width = my_width(successes = successes,
+                          trials = trials))
+```
+
+OK! This gave me my results. Let's do a quick plot first.
+
+```{r}
+ggplot(my_tests,
+       aes(x = trials,
+           y = width)) +
+  geom_line() +
+  geom_hline(yintercept = .05,
+             linetype = "dashed") +
+  theme_minimal()
+```
+
+It looks like I get there around 2500. But let's check a different way. Let's use `filter()` to look at the smallest sample size for which the width is .05 or less.
+
+```{r}
+my_tests |> 
+  filter(width <= .05) |> 
+  arrange(trials) |> 
+  head()
+```
+
+The answer seems to be a bit more than 2500 but very close to that.

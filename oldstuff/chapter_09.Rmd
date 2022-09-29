@@ -1,0 +1,32 @@
+---
+title: "Chapter 9"
+output: html_notebook
+---
+
+# Class
+
+```{r}
+library(rstanarm)
+library(tidyverse)
+library(texreg)
+library(ggeffects)
+library(tidybayes)
+library(broom)
+library(broom.mixed)
+library(BayesPostEst)
+
+data(mtcars)
+
+```
+
+```{r}
+m1 <- stan_glm(am ~ mpg,
+               data = mtcars,
+               family = binomial())
+
+prior_summary(m1)
+summary(m1)
+ggpredict(m1, terms = "mpg") %>% plot()
+
+```
+

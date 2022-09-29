@@ -1,0 +1,102 @@
+---
+title: "Chapter 11"
+output: html_notebook
+---
+
+# Class
+
+```{r}
+library(rstanarm)
+library(tidyverse)
+library(ggeffects)
+
+options(mc.cores = parallel::detectCores())
+
+```
+
+``` {r}
+
+load("data/cattaneo2.Rdata")
+
+set.seed(12345)
+
+d <- d %>% slice_sample(n = 1000)
+
+mystand <- function (x) {
+  (x - mean(x)) / sd(x)
+}
+
+zd <- d %>% 
+  mutate(across(c(mage,medu,nprenatal), mystand ))
+ 
+```
+
+```{r}
+m1 <- stan_glm(lbweight ~ -1 + factor(mbsmoke) + mage + I(mage^2) + medu + nprenatal,
+               data = zd,
+               family = "binomial",
+               prior = normal(0, 1),
+               prior_intercept = normal(0, 1.5))
+
+summary(m1, digits = 2)
+
+```
+
+```{r}
+d1 <- zd %>% 
+  mutate(mbsmoke = 1)
+
+d0 <- zd %>% 
+  mutate(mbsmoke = 0)
+
+zd <- zd %>% 
+  mutate(pred1 = predict(m1, newdata = d1, type = "response"),
+         pred0 = predict(m1, newdata = d0, type = "response"))
+
+zd <- zd %>% 
+  mutate(me = pred1 - pred0)
+
+mean(zd$me)
+
+```
+
+
+```{r}
+m2 <- stan_glm(nprenatal ~ mage,
+               data = d,
+               prior = normal(0,2, autoscale = TRUE),
+               prior_intercept = normal(0,2),
+               family = "poisson")
+
+summary(m2, digits = 3)
+ggpredict(m2, terms = c("mage")) %>% plot()
+
+```
+
+# Exercises
+
+## H4 and H5
+
+```{r}
+data(NWOGrants, package = "rethinking")
+
+d <- NWOGrants %>% 
+  mutate(p = awards/applications)
+
+m_total <- stan_glm(p ~ -1 + factor(gender),
+                    prior_intercept = normal(0,1.5),
+                    prior = normal(0,1),
+                    weights = applications,
+                    data = d,
+                    family = binomial)
+
+m_mediate <- stan_glm(p ~ -1 + factor(gender) + factor(discipline),
+                      prior_intercept = normal(0,1.5),
+                      prior = normal(0,1),
+                      weights = applications,
+                      data = d,
+                      family = binomial)
+
+
+```
+

@@ -1,0 +1,75 @@
+---
+title: "Chapter 8"
+output: html_notebook
+---
+
+# Class
+
+```{r}
+library(rstanarm)
+library(tidyverse)
+library(texreg)
+library(ggeffects)
+library(tidybayes)
+library(broom)
+library(broom.mixed)
+library(BayesPostEst)
+
+data(mtcars)
+d <- mtcars
+
+```
+
+```{r}
+m1 <- stan_glm(mpg ~ hp + wt + am,
+               data = d,
+               prior = normal(0,2.5, autoscale = TRUE),
+               prior_intercept = normal(0,2.5, autoscale = TRUE),
+               prior_aux = exponential(1, autoscale = TRUE))
+
+m2 <- update(m1, mpg ~ hp * wt + am)
+m3 <- update(m1, mpg ~ wt*(hp + I(hp^2)) + am)
+m4 <- update(m1, mpg ~ (wt + I(wt^2))*(hp + I(hp^2)) + am)
+
+
+```
+
+```{r}
+tidy(m1)
+tidy(m2)
+
+```
+
+```{r}
+ggpredict(m1, terms = c("hp", "wt")) %>% plot()
+ggpredict(m2, terms = c("hp", "wt")) %>% plot()
+ggpredict(m3, terms = c("hp", "wt")) %>% plot()
+ggpredict(m4, terms = c("hp", "wt")) %>% plot()
+
+
+
+mynums <- quantile(d$wt, c(.1,.5,.9))
+
+ggpredict(m4, terms = c("hp", "wt [mynums]")) %>% 
+  plot() +
+  labs(title = "Predicted MPG by Horsepower and Weight",
+       caption = "Lines drawn at 10th, 50th, and 90th percentiles of weight") +
+  xlab("Horsepower") +
+  ylab("Miles per Gallon (MPG)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+library(performance)
+cp <- compare_performance(m1,m2,m3,m4, metrics = c("LOOIC", "LOOIC_SE"))
+cp
+
+
+```
+
+
+
+# Exercises
+

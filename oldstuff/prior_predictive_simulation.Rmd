@@ -1,0 +1,62 @@
+---
+title: "Prior Predictive Simulation"
+output: html_notebook
+---
+
+# Class
+
+Prep
+
+```{r}
+library(rstanarm)
+library(tidyverse)
+library(ggeffects)
+library(tidybayes)
+library(broom)
+library(broom.mixed)
+library(BayesPostEst)
+
+options(mc.cores = parallel::detectCores())
+
+load("data/cattaneo2.Rdata")
+
+set.seed(12345)
+
+d <- d %>% slice_sample(n = 500)
+
+mystand <- function (x) {
+  (x - mean(x)) / sd(x)
+}
+
+zd <- d %>% 
+  mutate(across(c(mage,medu,nprenatal), mystand ))
+ 
+```
+
+OK let's try
+
+```{r}
+m1_prior <- stan_glm(bweight ~ mage,
+                     data = zd,
+                     prior = normal(0,2),
+                     prior_intercept = normal(0,2, autoscale = TRUE),
+                     prior_aux = exponential(1, autoscale = TRUE),
+                     prior_PD = TRUE,
+                     chains = 1)
+
+draws <- m1_prior$stanfit@sim$samples
+
+ppsim <- tibble(alpha = draws[[1]]$`alpha[1]` ,
+                beta = draws[[1]]$`beta[1]`,
+                sim = 1:1000) %>% 
+  group_by(sim)
+
+p <- ggplot(ppsim, aes(intercept = alpha,
+                       slope = beta,
+                       group = sim,
+                       color = sim)) +
+  geom_abline()
+
+
+```
+
