@@ -97,9 +97,9 @@ obs_per_sim <- 100
 # create the fake data
 sims1_data <- sims1 |>
   uncount(100) |> 
-  mutate(x = runif(n = nsims * obs_per_sim,
-                   min = -4, 
-                   max =  4),
+  mutate(x = rnorm(n = nsims * obs_per_sim,
+                   mean = 0, 
+                   sd = 1),
          y = rnorm(n = nsims * obs_per_sim,
                    mean = a + b*x,
                    sd = sigma ))
@@ -164,7 +164,7 @@ sims2 <- tibble(
 )
 
 # here are the fake lines (and sigmas)
-head(sims1, nsims)
+head(sims2, nsims)
 ```
 
 We can plot these lines.
