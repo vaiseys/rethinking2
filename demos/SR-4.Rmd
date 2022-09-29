@@ -9,6 +9,8 @@ knitr::opts_chunk$set(echo = TRUE,
                       cache = TRUE)
 ```
 
+Install these if you haven't already.
+
 ```{r, eval=FALSE}
 install.packages("tidybayes")
 devtools::install_github("mjskay/tidybayes.rethinking")
