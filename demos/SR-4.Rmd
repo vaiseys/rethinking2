@@ -5,8 +5,7 @@ date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      cache = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
 
 Install these if you haven't already.
@@ -309,6 +308,29 @@ p + geom_ribbon(data = ppsims,
                   ymin = lo_bound),
                 alpha = .1) +
   labs(caption = "with 89% HPDI overlaid")
+```
+
+If we just want the ribbon, we can calculate the HDPIs on "fake" data that just gives a few values of `cheight`. This will speed things up and make it look less jagged.
+
+```{r}
+some_cheights <- tibble(
+  cheight = c(min(d$cheight), mean(d$cheight), max(d$cheight))
+)
+
+ppsims2 <- predicted_draws(m1,
+                          newdata = some_cheights,
+                          draws = 5000) |> 
+  group_by(.row) |> 
+  mutate(lo_bound = HPDI(.prediction, .99)[1], # just did 99% interval to change things up
+         up_bound = HPDI(.prediction, .99)[2]) # ditto
+
+p + geom_ribbon(data = ppsims2,
+                mapping = aes(
+                  x = cheight, 
+                  ymax = up_bound,
+                  ymin = lo_bound),
+                alpha = .1) +
+  labs(caption = "with 99% HPDI overlaid")
 ```
 
 
