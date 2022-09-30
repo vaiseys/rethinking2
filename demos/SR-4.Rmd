@@ -318,8 +318,8 @@ some_cheights <- tibble(
 )
 
 ppsims2 <- predicted_draws(m1,
-                          newdata = some_cheights,
-                          draws = 5000) |> 
+                           newdata = some_cheights,
+                           draws = 5000) |> 
   group_by(.row) |> 
   mutate(lo_bound = HPDI(.prediction, .99)[1], # just did 99% interval to change things up
          up_bound = HPDI(.prediction, .99)[2]) # ditto
@@ -333,6 +333,85 @@ p + geom_ribbon(data = ppsims2,
   labs(caption = "with 99% HPDI overlaid")
 ```
 
+## without centering the outcome
 
+Let's make the model
+
+```{r}
+flist2 <- alist(
+  weight ~ dnorm(mu, sigma),
+  mu <- a + b*cheight,
+  a ~ dnorm(165, 40),
+  b ~ dlnorm(0, 1),
+  sigma ~ dunif(0, 30)
+)
+```
+
+How we can estimate the model.
+
+```{r}
+m2 <- quap(flist2,
+           data = d)
+```
+
+Look at results summary.
+
+```{r}
+precis(m2)
+```
+
+Use `tidy_draws()` instead of `rethinking::link()`.
+
+```{r}
+draws2 <- tidy_draws(m2, n = 1000)
+```
+
+Draw the "bowtie" of model predictions. This will be a little sluggish because we're drawing 1000 lines.
+
+```{r}
+p2 <- ggplot(draws2) +
+  geom_abline(aes(intercept = a,
+                  slope = b),
+    alpha = .01) +
+  geom_point(
+    data = d,
+    mapping = aes(x = cheight,
+                  y = weight),
+    alpha = .2) +
+  labs(x = "height - mean(height) in cm",
+       y = "weight in kg",
+       title = "Posterior estimates and original data")
+
+p2
+```
+
+Now we can use `predicted_draws()` instead of `rethinking::sim()`. Unlike what I did above, you can use the `post` argument to reuse the draws you've already drawn above using `tidy_draws()`. This matches more closely the _Rethinking_ workflow.
+
+```{r}
+some_cheights <- tibble(
+  cheight = c(min(d$cheight), mean(d$cheight), max(d$cheight))
+)
+
+sims2 <- predicted_draws(m2, 
+                         post = draws2,               # this parallels RM's link-to-sim workflow
+                         newdata = some_cheights)
+```
+
+Now we can add the HPDI upper and lower bounds and plot, as before.
+
+```{r}
+sims2 <- sims2 |> 
+  group_by(.row) |> 
+  mutate(lo_bound = HPDI(.prediction, .99)[1], # just did 99% interval to change things up
+         up_bound = HPDI(.prediction, .99)[2]) # ditto
+
+p2 + geom_ribbon(data = sims2,
+                mapping = aes(
+                  x = cheight, 
+                  ymax = up_bound,
+                  ymin = lo_bound),
+                alpha = .1) +
+  labs(caption = "with 99% HPDI overlaid")
+```
 
 
