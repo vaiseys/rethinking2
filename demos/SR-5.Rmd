@@ -73,6 +73,8 @@ Get 10,000 draws from the posterior.
 pdraws <- tidy_draws(fit, n = 1e4) |> 
   janitor::clean_names() |>    # fixes weird backticks and brackets
   select(-chain, -iteration)   # drops MCMC things we don't need
+
+head(pdraws)
 ```
 
 Now we can use this full posterior to make inferences about parameters and parameter differences.
@@ -126,7 +128,7 @@ We need to incorporate FIVE kinds of uncertainty in each of (1) and (2):
 - uncertainty about the location of a *particular height* conditional on that average (tau)
 - uncertainty about each sex's average weight at the average height (alpha)
 - uncertainty about the relationship between height and weight (uncertainty about beta)
-- uncertainty about a *particular height* conditional on the above (sigma)
+- uncertainty about a *particular weight* conditional on the above (sigma)
 
 ```{r}
 hbar <- mean(d2$H)
@@ -134,10 +136,9 @@ hbar <- mean(d2$H)
 pdraws <- pdraws |>
   mutate(m_height = rnorm(nrow(pdraws), gamma_2, tau),
          f_height = rnorm(nrow(pdraws), gamma_1, tau),
-         m_weight = rnorm(nrow(pdraws), beta_2 * (m_height - hbar), sigma),
-         f_weight = rnorm(nrow(pdraws), beta_1 * (f_height - hbar), sigma),
+         m_weight = rnorm(nrow(pdraws), alpha_2 + beta_2 * (m_height - hbar), sigma),
+         f_weight = rnorm(nrow(pdraws), alpha_1 + beta_1 * (f_height - hbar), sigma),
          do_s = m_weight - f_weight)
-
 ```
 
 We can plot the effect altering birth sex would have on weight in kg.
@@ -168,8 +169,8 @@ hbar <- mean(d2$H)
 pdraws2 <- pdraws |>
   mutate(m_height = rnorm(nrow(pdraws), gamma_2, 0),
          f_height = rnorm(nrow(pdraws), gamma_1, 0),
-         m_weight = rnorm(nrow(pdraws), beta_2 * (m_height - hbar), 0),
-         f_weight = rnorm(nrow(pdraws), beta_1 * (f_height - hbar), 0),
+         m_weight = rnorm(nrow(pdraws), alpha_2 + beta_2 * (m_height - hbar), 0),
+         f_weight = rnorm(nrow(pdraws), alpha_1 + beta_1 * (f_height - hbar), 0),
          do_s = m_weight - f_weight)
 ```
 
@@ -183,6 +184,8 @@ ggplot(pdraws2,
 
 par_sim_plot
 ```
+
+Visualize both on top of each other.
 
 ```{r}
 library(patchwork)
@@ -301,3 +304,20 @@ ggplot(postsum,
 curve(dexp(x), from = 0, to = 2)
 ```
 
+## Fake data
+
+```{r}
+fakedata <- tibble(
+  A = rnorm(1e4, 0, 1),
+  M = rnorm(1e4, A*-.3, 1),
+  mu = A,
+  D = rnorm(1e4, mu, 1)
+)
+
+fakefit <- quap(
+  flist,
+  data = fakedata
+)
+
+precis(fakefit)
+```
