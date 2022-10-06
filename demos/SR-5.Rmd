@@ -1,0 +1,303 @@
+---
+title: "Chapter 5 (video 4)"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load packages.
+
+```{r, message=FALSE}
+library(tidyverse)
+library(rethinking)
+library(tidybayes)
+library(tidybayes.rethinking)
+library(ggthemes)
+theme_set(theme_pander())
+```
+
+## Lecture 4
+
+Data prep.
+
+```{r}
+data(Howell1)
+d <- Howell1 |> filter(age >= 18)
+d2 <- d |> 
+  rename(W = weight,
+         H = height,
+         A = age,
+         S = male) |> 
+  mutate(S = as.integer(S+1))
+```
+
+Formula for estimating "causal system."
+
+```{r}
+Hbar <- mean(d2$H)
+  
+flist <- 
+  alist(
+    
+  # weight model
+    W ~ dnorm(mu, sigma),
+    mu <- alpha[S] + beta[S]*(H-Hbar),
+    alpha[S] ~ dnorm(45, 20),
+    beta[S] ~ dlnorm(0, 1),
+    sigma ~ dunif(0, 30),
+    
+  # height model
+    H ~ dnorm(nu, tau),
+    nu <- gamma[S],
+    gamma[S] ~ dnorm(155, 30),
+    tau ~ dunif(0, 30)
+  
+  )
+
+fit <- quap(flist,
+            data = d2)
+```
+
+Posterior summary
+
+```{r}
+precis(fit, depth = 2) # need depth = 2 when you have "vector" parameters like index variables
+```
+
+Get 10,000 draws from the posterior.
+
+```{r}
+pdraws <- tidy_draws(fit, n = 1e4) |> 
+  janitor::clean_names() |>    # fixes weird backticks and brackets
+  select(-chain, -iteration)   # drops MCMC things we don't need
+```
+
+Now we can use this full posterior to make inferences about parameters and parameter differences.
+
+For example, we might ask: what is the difference in the height -> weight slope between males (sex = 2) and females (sex = 1)?
+
+```{r}
+pdraws |> 
+  mutate(bdiff = beta_2 - beta_1) |>
+  pull(bdiff) |> 
+  HPDI()
+```
+
+This is the 89% confidence interval of the difference in kg/cm between males and females. 
+
+Or we could estimate the total effect of sex on the height difference.
+
+```{r}
+pdraws |> 
+  mutate(gdiff = gamma_2 - gamma_1) |> 
+  pull(gdiff) |> 
+  HPDI()
+```
+
+This is the total sex-caused difference in height in cm. We could also plot it.
+
+```{r}
+pdraws |> 
+  mutate(gdiff = gamma_2 - gamma_1) |> 
+
+ggplot(aes(x = gdiff)) +
+  geom_density()
+```
+
+Now RM wants to do an intervention where he calculates the intervention effect of changing natal sex (around 46:15 on the video). His code looks monstrous to me but this is what I think I'm seeing.
+
+We want to know what would happen if we changed "female" to "male". We need to calculate both the S -> W path and the S -> H -> W path.
+
+We need to calculate two new simulated variables:
+
+1. The data distribution for an average female implied by the model
+2. The data distribution for an average male implied by the model
+
+Then:
+
+3. Take the difference between them.
+
+We need to incorporate FIVE kinds of uncertainty in each of (1) and (2):
+
+- uncertainty about each sex's average height (with no other variables; i.e., uncertainty about gamma)
+- uncertainty about the location of a *particular height* conditional on that average (tau)
+- uncertainty about each sex's average weight at the average height (alpha)
+- uncertainty about the relationship between height and weight (uncertainty about beta)
+- uncertainty about a *particular height* conditional on the above (sigma)
+
+```{r}
+hbar <- mean(d2$H)
+
+pdraws <- pdraws |>
+  mutate(m_height = rnorm(nrow(pdraws), gamma_2, tau),
+         f_height = rnorm(nrow(pdraws), gamma_1, tau),
+         m_weight = rnorm(nrow(pdraws), beta_2 * (m_height - hbar), sigma),
+         f_weight = rnorm(nrow(pdraws), beta_1 * (f_height - hbar), sigma),
+         do_s = m_weight - f_weight)
+
+```
+
+We can plot the effect altering birth sex would have on weight in kg.
+
+```{r}
+data_sim_plot <- 
+  ggplot(pdraws,
+         aes( x = do_s)) +
+  geom_density() +
+  geom_vline(xintercept = 0,
+             color = "red",
+             linetype = "dashed")
+
+data_sim_plot
+```
+
+We could use these calculations to estimate what psychologists call "the probability of superiority"; that is, what percentage of the time males would be expected to be taller than females because of the "treatment."
+
+```{r}
+mean(pdraws$do_s > 0)
+```
+
+I could do all of the above getting rid of the "residual" variance. There are easier ways, but why not this?
+
+```{r}
+hbar <- mean(d2$H)
+
+pdraws2 <- pdraws |>
+  mutate(m_height = rnorm(nrow(pdraws), gamma_2, 0),
+         f_height = rnorm(nrow(pdraws), gamma_1, 0),
+         m_weight = rnorm(nrow(pdraws), beta_2 * (m_height - hbar), 0),
+         f_weight = rnorm(nrow(pdraws), beta_1 * (f_height - hbar), 0),
+         do_s = m_weight - f_weight)
+```
+
+Now plot.
+
+```{r}
+par_sim_plot <- 
+ggplot(pdraws2,
+       aes( x = do_s)) +
+  geom_density()
+
+par_sim_plot
+```
+
+```{r}
+library(patchwork)
+p1 <- data_sim_plot + scale_x_continuous(limits = c(-20, 30)) 
+p2 <- par_sim_plot + scale_x_continuous(limits = c(-20, 30))
+
+p1/p2
+```
+
+
+## Lecture 5
+
+Data prep.
+
+```{r}
+data("WaffleDivorce")
+d <- WaffleDivorce |> 
+  select(Loc, Divorce, Marriage, MedianAgeMarriage, South) |> 
+  rename(state = Loc,
+         D = Divorce,
+         M = Marriage,
+         A = MedianAgeMarriage,
+         S = South) |> 
+  mutate(across(c(D,M,A),
+                ~ (.x - mean(.x)) / sd(.x)))
+```
+
+Do model.
+
+```{r}
+flist <- 
+  alist(
+    D ~ dnorm(mu, sigma),
+    mu <- a + bM*M + bA*A,
+    a ~ dnorm(0, .2),
+    bM ~ dnorm(0, .5),
+    bA ~ dnorm(0, .5),
+    sigma ~ dexp(1)
+  )
+
+fit <- quap(flist,
+            data = d)
+```
+
+Look at the posterior estimates.
+
+```{r}
+precis(fit)
+
+precis(fit) |> plot()
+```
+
+Let's try tidy.
+
+```{r}
+post <- tidy_draws(fit, n = 1e4) |> 
+  select(a:sigma)
+
+head(post)
+```
+
+Plotting prep.
+
+```{r}
+longpost <- post |> 
+  pivot_longer(everything(),
+               names_to = "term",
+               values_to = "values")
+
+head(longpost, 8)
+```
+
+Plotting.
+
+```{r}
+ggplot(longpost,
+       aes(x = values)) +
+  geom_histogram(color = "white",
+                 binwidth = .05,
+                 boundary = 0) +
+  facet_grid(rows = vars(term),
+             switch = "y") +
+  geom_vline(xintercept = 0,
+             color = "gray") +
+  scale_y_continuous(breaks = NULL) +
+  labs(y = "")
+```
+
+Another way.
+
+```{r}
+postsum <- longpost |>
+  group_by(term) |> 
+  summarize(mean = mean(values),
+            lb = quantile(values, .055),
+            ub = quantile(values, .945))
+postsum
+
+ggplot(postsum,
+       aes(y = reorder(term, c(4,3,2,1)),
+           x = mean,
+           xmin = lb,
+           xmax = ub)) +
+  geom_point(size = 2) +
+  geom_linerange(size = 1) +
+  geom_vline(xintercept = 0,
+             color = "gray") +
+  xlim(-1,1) +
+  labs(x = "Estimate",
+       y = "")
+```
+
+## Additional stuff
+
+```{r}
+curve(dexp(x), from = 0, to = 2)
+```
+
