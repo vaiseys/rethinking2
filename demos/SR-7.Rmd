@@ -1,0 +1,73 @@
+---
+title: "SH 7 Demo"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rethinking)
+library(tidyverse)
+library(broom)
+library(ggthemes)
+theme_set(theme_pander())
+```
+
+```{r}
+# set sim parameters
+num_sims <- 1000
+sample_size <- 100
+totn <- num_sims * sample_size
+
+bSA <- 1
+bXA <- 1
+bXS <- 1
+bYA <- 1
+bYS <- 1
+bYX <- 1
+
+# create data and split into different sim runs
+sims <- tibble(
+  sim_id = 1:num_sims) |> 
+  uncount(sample_size) |> 
+  mutate(A = rnorm(totn, 0, 1),
+         S = rnorm(totn, bSA*A, 1),
+         X = rnorm(totn, bXS*S + bXA*A, 1),
+         Y = rnorm(totn, bYS*S + bYX*X + bYA*A, 1)) |> 
+  group_by(sim_id) |> 
+  nest()
+
+glimpse(sims)
+```
+
+```{r}
+myfit <- function(data) {
+  lm(Y ~ X + S + A,
+     data = data) |> 
+    tidy()
+}
+```
+
+```{r}
+sims <- sims |>
+  mutate(fits = purrr::map(data, myfit))
+```
+
+```{r}
+results <- sims |> 
+  unnest(fits) |> 
+  select(sim_id, term, estimate) |> 
+  filter(term != "(Intercept)")
+```
+
+```{r}
+ggplot(results,
+       aes(x = estimate,
+           group = term,
+           color = term)) +
+  geom_density()
+```
+
