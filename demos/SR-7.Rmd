@@ -1,0 +1,126 @@
+---
+title: "SR 7 (Model Selection)"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+```{r}
+library(rethinking)
+library(rstanarm)
+library(tidyverse)
+library(tidybayes)
+library(tidybayes.rethinking)
+library(ggthemes)
+theme_set(theme_pander())
+set.seed(12345)
+```
+
+```{r}
+data(cars)
+```
+
+```{r}
+flist <- alist(
+  dist ~ dnorm(mu, sigma),
+  mu <- a + b*speed,
+  a ~ dnorm(0, 100),
+  b ~ dnorm(0, 10),
+  sigma ~ dexp(1)
+)
+
+m <- quap(flist, data = cars)
+
+post <- tidy_draws(m, n = 1000) |> 
+  dplyr::select(.draw, a, b, sigma) |> 
+  janitor::clean_names()
+
+head(post)
+```
+
+$$
+\text{lppd}(y,\Theta) = \sum_i \log \frac{1}{S} \sum_s p(y_i|\Theta_s)
+$$
+
+```{r}
+cars <- cars |>        
+  mutate(id = 1:n())  # add an identifier to cars data
+
+# set up grid (all draws for all cars$id)
+the_grid <- crossing(id = cars$id,
+                     draw = post$draw) |> 
+  left_join(cars) |>
+  left_join(post)
+
+head(the_grid)
+```
+
+
+```{r}
+the_grid <- the_grid |> 
+  mutate(dist_hat = a + b*speed,
+         logprob = dnorm(dist, dist_hat, sigma, log=TRUE))
+
+# get lppd
+lppd <- the_grid |>
+  mutate(prob = exp(logprob)) |> 
+  group_by(id) |> 
+  summarize(log_mean_prob = log(mean(prob))) |> 
+  summarize(lppd = sum(log_mean_prob)) |> 
+  as.numeric()
+lppd
+
+# get overfitting penalty
+pWAIC <- the_grid |> 
+  group_by(id) |> 
+  summarize(var_ll = var(logprob)) |> 
+  summarize(pWAIC = sum(var_ll)) |> 
+  as.numeric()
+pWAIC
+
+WAIC <- -2 * (lppd - pWAIC )
+WAIC
+```
+
+```{r}
+cars <- cars |> 
+  mutate(speed_std = standardize(speed),
+         dist_std = standardize(dist))
+
+ggplot(cars,
+       aes(x = speed_std,
+           y = dist_std)) +
+  geom_point() +
+  geom_smooth(method = "loess")
+
+# linear
+flist1 <- alist(
+  dist_std ~ dnorm(mu, sigma),
+  mu <- a + b*speed_std,
+  a ~ dnorm(0, 1),
+  b ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+)
+
+m1 <- quap(flist1, data = cars)
+
+# quad
+flist2 <- alist(
+  dist_std ~ dnorm(mu, sigma),
+  mu <- a + b1*speed_std + b2*I(speed_std^2),
+  a ~ dnorm(0, 1),
+  c(b1,b2) ~ dnorm(0, 1),
+  sigma ~ dexp(1)
+)
+
+m2 <- quap(flist2, data = cars)
+
+rethinking::compare(m1, m2, func = WAIC)
+rethinking::compare(m1, m2, func = PSIS)
+```
+
