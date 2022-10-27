@@ -124,3 +124,126 @@ rethinking::compare(m1, m2, func = WAIC)
 rethinking::compare(m1, m2, func = PSIS)
 ```
 
+## stuff that is not Bayesian
+
+#### cars data
+
+```{r}
+lm1 <- lm(dist ~ speed,
+          data = cars)
+lm2 <- lm(dist ~ speed + I(speed^2),
+          data = cars)
+
+library(ggeffects)
+
+ggpredict(lm1, terms = "speed") |> plot()
+ggpredict(lm2, terms = "speed") |> plot()
+
+library(performance)
+performance(lm1)
+
+compare_performance(lm1,lm2)
+```
+
+#### GSS
+
+```{r}
+library(gssr)
+data(gss_all)
+```
+
+```{r}
+d <- gss_all |> 
+  filter(year == 2018,
+         wrkstat == 1) |> 
+  select(id, educ, realrinc, sex) |>
+  mutate(logrinc = log(realrinc),
+         female = if_else(sex == 2, 1L, 0L)) |> 
+  drop_na() |> 
+  haven::zap_labels()
+
+head(d)
+glimpse(d)
+```
+
+```{r}
+d2016 <- gss_all |> 
+  filter(year == 2016,
+         wrkstat == 1) |> 
+  select(id, educ, realrinc, sex) |>
+  mutate(logrinc = log(realrinc),
+         female = if_else(sex == 2, 1L, 0L)) |> 
+  drop_na() |> 
+  haven::zap_labels()
+```
+
+
+```{r}
+library(broom)
+mod1 <- lm(logrinc ~ educ,
+           data = d)
+tidy(mod1)
+```
+
+
+
+```{r}
+ggplot(d,
+       aes(x = educ,
+           y = logrinc)) +
+  geom_jitter(alpha = .2) +
+  geom_smooth(formula = y ~ x, 
+              method = "lm")
+
+ggplot(d,
+       aes(x = educ,
+           y = logrinc)) +
+  geom_jitter(alpha = .2) +
+  geom_smooth(formula = y ~ poly(x,3), 
+              method = "lm")
+
+ggplot(d2016,
+       aes(x = educ,
+           y = logrinc)) +
+  geom_jitter(alpha = .2) +
+  geom_smooth(formula = y ~ poly(x,10), 
+              method = "lm")
+```
+
+```{r}
+lm1 <- lm(logrinc ~ educ,
+          data = d)
+lm2 <- lm(logrinc ~ poly(educ,2),
+          data = d)
+lm3 <- lm(logrinc ~ poly(educ, 3),
+          data = d)
+
+compare_performance(lm1,lm2,lm3)
+```
+
+```{r}
+d <- d |> 
+  mutate(college = if_else(educ >= 16, 1L, 0L))
+
+lm_college <- lm(logrinc ~ college,
+                 data = d)
+
+compare_performance(lm1,lm2,lm3,lm_college)
+```
+
+```{r}
+lm_col2 <- lm(logrinc ~ educ * college,
+              data = d)
+
+tidy(lm_col2)
+compare_performance(lm1,lm2,lm3,lm_college)
+
+library(sjPlot)
+plot_model(lm_col2, 
+           typ = "int", 
+           terms = c("college, educ"))
+
+compare_performance(lm1,lm2,lm3,lm_college,lm_col2)
+```
+
+

@@ -1,0 +1,82 @@
+---
+title: "SR 7 (Model Selection)"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(rstanarm)
+library(broom.mixed)
+library(performance)
+library(parameters)
+library(modelsummary)
+theme_set(theme_pander())
+set.seed(12345)                              # for randomness
+#options(mc.cores = parallel::detectCores()) # do this for parallel
+```
+
+```{r}
+library(gssr)
+data(gss_all)
+```
+
+```{r}
+d <- gss_all |> 
+  filter(year == 2018,
+         wrkstat == 1) |> 
+  select(id, educ, realrinc, sex) |>
+  mutate(logrinc = log(realrinc),
+         female = if_else(sex == 2, 1L, 0L)) |> 
+  drop_na() |> 
+  haven::zap_labels()
+
+head(d)
+glimpse(d)
+```
+
+```{r}
+m1 <- lm(logrinc ~ educ + female,
+         data = d)
+m2 <- lm(logrinc ~ educ * female,
+         data = d)
+compare_performance(m1, m2)
+```
+
+```{r}
+msummary(list(m1,m2))
+```
+
+```{r}
+r1 <- stan_glm(logrinc ~ educ + female,
+         data = d,
+         prior_intercept = normal(0,1, autoscale = TRUE),
+         prior = normal(0, 1, autoscale = TRUE),
+         prior_aux = exponential(1, autoscale = TRUE),
+         algorithm = "optimizing")
+
+r2 <- update(r1, logrinc ~ educ * female)
+
+msummary(list(r1,r2), statistic = "conf.int")
+```
+
+```{r}
+s1 <- stan_glm(logrinc ~ educ + female,
+         data = d,
+         prior_intercept = normal(0,1, autoscale = TRUE),
+         prior = normal(0, 1, autoscale = TRUE),
+         prior_aux = exponential(1, autoscale = TRUE),
+         algorithm = "sampling")
+
+s2 <- update(s1, logrinc ~ educ * female)
+
+msummary(list(s1,s2), statistic = "conf.int")
+```
+
