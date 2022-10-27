@@ -45,13 +45,56 @@ glimpse(d)
 ```{r}
 m1 <- lm(logrinc ~ educ + female,
          data = d)
+tidy(m1)
+
 m2 <- lm(logrinc ~ educ * female,
          data = d)
+tidy(m2)
+
 compare_performance(m1, m2)
 ```
 
+One way to visualize
+
 ```{r}
-msummary(list(m1,m2))
+library(sjPlot)
+plot_model(m2, type = "int")
+```
+
+Another way
+
+```{r}
+library(ggeffects)
+ggpredict(m2, terms = c("educ","female")) |> 
+  plot()
+
+ggpredict(m1, terms = c("educ","female")) |> 
+  plot()
+```
+
+Manual way
+
+```{r}
+pred_df <- crossing(
+  educ = 0:20,
+  female = 0:1
+)
+
+pred_df <- pred_df |> 
+  mutate(pred = predict(m2, newdata = pred_df))
+
+# then make the plot lol
+```
+
+```{r}
+modelplot(m2)
+msummary(m2)
+```
+
+```{r}
+msummary(list(m1,m2),
+         statistic = "conf.int",
+         conf_level = .89)
 ```
 
 ```{r}
