@@ -1,0 +1,111 @@
+---
+title: "Untitled"
+author: "Steve Vaisey"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(gssr)
+library(rethinking)
+```
+
+Get the data.
+
+```{r}
+d <- gss_get_yr(2018) |> 
+  select(evstray, attend, sex, relig16) |> 
+  drop_na() |> 
+  haven::zap_labels() |> 
+  filter(evstray %in% c(1,2))
+
+glimpse(d)
+```
+
+More data processing
+
+```{r}
+dd <- d |> 
+  mutate(female = if_else(sex == 2, 1, 0),
+         affair = if_else(evstray == 1, 1, 0),
+         relig_cat = case_when(
+           relig16 == 1 ~ 1,
+           relig16 == 2 ~ 2,
+           relig16 == 3 ~ 3,
+           relig16 == 4 ~ 4,
+           TRUE ~ 5
+         ),
+         att_fac = factor(attend + 1),
+         attend1 = attend + 1) |> 
+  select(-evstray, -sex, -relig16)
+
+glimpse(dd)
+```
+
+```{r}
+flist <- alist(
+  affair ~ dnorm(mu, sigma),
+  mu <- a + bf*female + batt[attend1] + brc[relig_cat],
+  a ~ dnorm(.20, .05),
+  bf ~ dnorm(0, .05),
+  batt[att_fac] ~ dnorm(0, .05),
+  brc[relig_cat] ~ dnorm(0, .05),
+  sigma ~ dexp(1)
+)
+```
+
+```{r}
+ppsims <- dd |> 
+  select(female) |> 
+  uncount(100) |>
+  rowwise() |> 
+  mutate( simprob = 
+            rnorm(1, .2, .05) +             # a
+            rnorm(1, 0, .05)*female +       # bf
+            rnorm(1, 0, .05) +              # att_fac
+            rnorm(1, 0, .05)                # relig_cat
+          ) 
+```
+
+```{r}
+m1 <- quap(
+  flist,
+  data = dd
+)
+```
+
+```{r}
+precis(m1, depth = 2)
+```
+
+
+```{r}
+library(tidybayes)
+library(tidybayes.rethinking)
+
+draws <- tidy_draws(m1)
+```
+
+```{r}
+library(rstanarm)
+
+dd <- dd |> 
+  mutate(cat_fac = as.factor(relig_cat))
+
+rs1 <- stan_glm(affair ~ 0 + female + att_fac + cat_fac,
+                data = dd)
+
+print(rs1, digits = 3)
+
+```
+
+
+
+
+
+
